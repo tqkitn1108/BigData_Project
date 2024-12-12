@@ -2,6 +2,7 @@ import pandas as pd
 import time
 import os
 import json
+from datetime import datetime
 from vnstock3 import Vnstock
 
 # Initialize Vnstock instance
@@ -23,6 +24,9 @@ industry_dict = industry_data.set_index('symbol').to_dict(orient='index')
 # Define batch size as 5% of total tickers
 batch_size = max(1, len(all_symbols) // 20)  # Ensure at least one symbol per batch
 
+# Get the current date for the end date
+current_date = datetime.now().strftime('%Y-%m-%d')
+
 def fetch_data_for_batch(batch):
     """Fetch data for a batch of tickers."""
     batch_data = []
@@ -31,7 +35,7 @@ def fetch_data_for_batch(batch):
         try:
             # Fetch industry data
             industry_info = industry_dict.get(ticker, {})
-            history = stock.quote.history(symbol=ticker, start='2003-1-1', end='2024-10-30', interval='1D')
+            history = stock.quote.history(symbol=ticker, start='2003-1-1', end=current_date, interval='1D')
             
             if history.empty:
                 print(f"Warning: No data for ticker {ticker}. Skipping...")
