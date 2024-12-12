@@ -73,20 +73,6 @@ spark = SparkSession.builder \
 # df = spark.read.option("multiline","true").json("hdfs://namenode:9000/data/test/stock_test/stock_test.json")
 df = spark.read.option("multiline","true").json("hdfs://namenode:9000/bigdata_20241/stock_data/*.json")
 
-# 1. Dữ liệu cho Candlestick Chart
-# candlestick_data = df.select(
-#     "time", "ticker", "open", "high", "low", "close", "volume"
-# ).orderBy("time")
-
-# # Lưu vào Elasticsearch
-# candlestick_data.write \
-#     .format("org.elasticsearch.spark.sql") \
-#     .option("es.resource", "stock_candlestick") \
-#     .option("es.nodes", "elasticsearch") \
-#     .option("es.port", "9200") \
-#     .mode("overwrite") \
-#     .save()
-
 # 4. Phân tích theo ngành
 # industry_analysis = df.groupBy("icb_name2", "icb_name3", "icb_name4") \
 #     .agg(
@@ -122,137 +108,100 @@ df = spark.read.option("multiline","true").json("hdfs://namenode:9000/bigdata_20
 #     .option("es.port", "9200") \
 #     .mode("overwrite") \
 #     .save()
-
-# 3. Dữ liệu cho Biểu đồ biến động giá 30 ngày gần nhất
+from pyspark.sql.functions import (
+    col, desc, datediff, current_timestamp, to_date, 
+    when, lit, date_format, unix_timestamp
+)
 from datetime import datetime, timedelta
-from pyspark.sql.functions import to_date, date_format, col, lag, round, current_timestamp, unix_timestamp
-from pyspark.sql.window import Window
 
-def get_price_changes_30days(ticker_symbol):
+# Tạo dữ liệu xu hướng giá cho mã AAA trong 120 ngày gần nhất
+def create_price_trend(ticker_symbol, days=120):
     current_date = datetime.now().date()
-    thirty_days_ago = current_date - timedelta(days=90)
+    start_date = current_date - timedelta(days=days)
     
-    windowSpec = Window.partitionBy("ticker").orderBy("date")
-    
-    price_changes = df.filter(col("ticker") == ticker_symbol) \
+    price_trend = df.filter(col("ticker") == ticker_symbol) \
         .withColumn("date", to_date("time")) \
-        .filter(
-            (col("date") >= thirty_days_ago) & 
-            (col("date") <= current_date)
+        .filter(col("date") >= start_date) \
+        .withColumn("price_trend", 
+            when(col("close") >= col("open"), "up")
+            .otherwise("down")
         ) \
-        .select(
-            "date",
-            "ticker",
-            "close",
-            lag("close").over(windowSpec).alias("prev_close")
-        ) \
-        .withColumn(
-            "price_change_pct", 
-            round(((col("close") - col("prev_close")) / col("prev_close")), 2)
-        ) \
-        .na.drop() \
-        .withColumn(
-            "timestamp", 
-            unix_timestamp("date").cast("long") * 1000  # Convert to milliseconds for Kibana
-        ) \
-        .withColumn(
-            "display_date", 
-            date_format("date", "dd/MM/yyyy")
-        ) \
-        .orderBy("date") \
-        .select(
-            "timestamp",     # Dùng để sort
-            "display_date",  # Dùng để hiển thị
-            "close",
-            "price_change_pct"
-        )
-
-    price_changes.write \
-        .format("org.elasticsearch.spark.sql") \
-        .option("es.resource", "stock_price_changes_aas_30d") \
-        .mode("overwrite") \
-        .save()
-
-    return price_changes
-
-# Sử dụng hàm
-# get_price_changes_30days("AAS")
-
-# Biểu đồ nến theo ngày
-from datetime import datetime, timedelta
-from pyspark.sql.functions import to_date, date_format, col, unix_timestamp
-
-def get_candlestick_data(ticker_symbol):
-    current_date = datetime.now().date()
-    thirty_days_ago = current_date - timedelta(days=90)
-    
-    candlestick = df.filter(col("ticker") == ticker_symbol) \
-        .withColumn("date", to_date("time")) \
-        .filter(
-            (col("date") >= thirty_days_ago) & 
-            (col("date") <= current_date)
-        ) \
-        .select(
-            "date",
-            "open",
-            "high", 
-            "low",
-            "close",
-            "volume"
-        ) \
-        .withColumn(
-            "timestamp", 
+        .withColumn("timestamp", 
             unix_timestamp("date").cast("long") * 1000
         ) \
-        .withColumn(
-            "display_date", 
+        .withColumn("display_date", 
             date_format("date", "dd/MM/yyyy")
         ) \
-        .orderBy("date") \
         .select(
-            "timestamp",     # Dùng để sort
-            "display_date",  # Hiển thị ngày
-            "open",         # Giá mở cửa
-            "high",         # Giá cao nhất
-            "low",          # Giá thấp nhất
-            "close",        # Giá đóng cửa
-            "volume"        # Khối lượng giao dịch
-        )
+            "timestamp",
+            "display_date",
+            "open",
+            "high",
+            "low",
+            "close",
+            "price_trend"
+        ) \
+        .orderBy("timestamp")
 
-    candlestick.write \
+    # Ghi dữ liệu vào Elasticsearch
+    price_trend.write \
         .format("org.elasticsearch.spark.sql") \
-        .option("es.resource", "stock_candlestick_aaa_v2") \
+        .option("es.resource", "stock_price_trend_aaa") \
         .mode("overwrite") \
         .save()
 
-    return candlestick
+    return price_trend
 
-# get_candlestick_data("AAA")
+# from pyspark.sql import SparkSession
+# from pyspark.sql.functions import (
+#     col, desc, round, year, max, first, last,
+#     when, lit, concat, date_format
+# )
+# from pyspark.sql.window import Window
+# import sys
 
-# volume_analysis = df.withColumn('year', year('time')) \
-#     .withColumn('trading_value', col('volume') * col('close') /1e9) \
-#     .groupBy('year') \
+
+# # Tạo DataFrame phân tích tăng trưởng
+# stock_growth = df \
+#     .withColumn("year", year(col("time"))) \
+#     .groupBy("ticker", "year") \
 #     .agg(
-#         (sum('trading_value')).alias('total_trading_value_billion')
+#         last("close").alias("year_end_price")
 #     ) \
-#     .withColumn('year_sort', col('year')) \
-#     .withColumn('year', col('year').cast('string')) \
-#     .orderBy('year_sort')  # Sắp xếp theo cột year_sort
+#     .filter((col("year") == 2022) | (col("year") == 2023))
 
-volume_analysis = df.withColumn("year", year("time")) \
-    .withColumn("transaction_value", (col("close") * col("volume")) / 1e9) \
-    .groupBy("year") \
-    .agg(sum("transaction_value").alias("total_trading_value_billion"))
+# # Pivot data để có giá 2022 và 2023 trên cùng một dòng
+# stock_growth_pivot = stock_growth \
+#     .groupBy("ticker") \
+#     .pivot("year", [2022, 2023]) \
+#     .agg(first("year_end_price")) \
+#     .withColumnRenamed("2022", "price_2022") \
+#     .withColumnRenamed("2023", "price_2023")
 
-# Lưu kết quả vào Elasticsearch với mapping
-volume_analysis.write \
-    .format("org.elasticsearch.spark.sql") \
-    .option("es.resource", "stock_trading_value_yearly") \
-    .option("es.nodes", "elasticsearch") \
-    .option("es.port", "9200") \
-    .option("es.mapping.id", "year") \
-    .mode("overwrite") \
-    .save()
+# # Tính hiệu suất và làm tròn số
+# final_growth = stock_growth_pivot \
+#     .withColumn(
+#         "growth_percentage",
+#         round(((col("price_2023") - col("price_2022")) / col("price_2022") * 100), 2)
+#     ) \
+#     .withColumn(
+#         "display_text",
+#         concat(
+#             col("ticker"),
+#             lit(": "),
+#             col("growth_percentage").cast("string"),
+#             lit("%")
+#         )
+#     ) \
+#     .orderBy(desc("growth_percentage")) \
+#     .limit(10)  # Lấy top 10 cổ phiếu tăng mạnh nhất
+
+# # Ghi dữ liệu vào Elasticsearch
+# final_growth.write \
+#     .format("org.elasticsearch.spark.sql") \
+#     .option("es.resource", "stock_growth_analysis_2023") \
+#     .mode("overwrite") \
+#     .save()
 
 print("Tất cả dữ liệu đã được đẩy vào Elasticsearch.")
 
