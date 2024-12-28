@@ -32,7 +32,7 @@ def get_price_changes_30days(ticker_symbol):
         ) \
         .withColumn(
             "display_date", 
-            date_format("date", "dd/MM/yyyy")
+            date_format("date", "yyyy/MM/dd")
         ) \
         .orderBy("date") \
         .select(
