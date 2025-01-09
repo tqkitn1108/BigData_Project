@@ -72,9 +72,16 @@ services:
     ports:
       - "8080:8080"
       - "7077:7077"
+      - "5000:5000"
     environment:
       - INIT_DAEMON_STEP=setup_spark
       - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      # - SPARK_MASTER_HOST=0.tcp.ap.ngrok.io
+      # - SPARK_MASTER_PORT=7077
+      # - SPARK_DRIVER_HOST=0.tcp.ap.ngrok.io
+      # - SPARK_DRIVER_PORT=5000
+      # - SPARK_EXECUTOR_MEMORY=4g
+      # - SPARK_DRIVER_MEMORY=4g
     networks:
       - spark-network
 
@@ -88,6 +95,7 @@ services:
     environment:
       - "SPARK_MASTER=spark://spark-master:7077"
       - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      - SPARK_EXECUTOR_MEMORY=2g
     networks:
       - spark-network
 
@@ -101,6 +109,7 @@ services:
     environment:
       - "SPARK_MASTER=spark://spark-master:7077"
       - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      - SPARK_EXECUTOR_MEMORY=2g
     networks:
       - spark-network
 

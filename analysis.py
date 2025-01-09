@@ -69,23 +69,16 @@ spark = SparkSession.builder \
     .config("spark.es.port", "9200") \
     .getOrCreate()
 
-# Tạo Spark session
-# spark = SparkSession.builder \
-#     .appName("Stock Analysis") \
-#     .config("spark.hadoop.fs.defaultFS", "hdfs://10.13.6.5:9000") \
-#     .config("spark.jars", "/tmp/elasticsearch-spark-30_2.12-7.15.1.jar") \
-#     .config("spark.es.nodes", "elasticsearch") \
-#     .config("spark.es.port", "9200") \
-#     .getOrCreate()
-
 df = spark.read.option("multiline","true").json("hdfs://namenode:9000/bigdata_20241/stock_data/*.json")
 
+# Biểu đồ nến theo ngày
 from datetime import datetime, timedelta
 from pyspark.sql.functions import to_date, date_format, col, unix_timestamp
+import time
 
 def get_candlestick_data(ticker_symbol):
     current_date = datetime.now().date()
-    thirty_days_ago = current_date - timedelta(days=90)
+    thirty_days_ago = current_date - timedelta(days=1000)
     
     candlestick = df.filter(col("ticker") == ticker_symbol) \
         .withColumn("date", to_date("time")) \
@@ -122,13 +115,13 @@ def get_candlestick_data(ticker_symbol):
 
     candlestick.write \
         .format("org.elasticsearch.spark.sql") \
-        .option("es.resource", "stock_candlestick_aaa_v3") \
+        .option("es.resource", "stock_candlestick_vic") \
         .mode("overwrite") \
         .save()
 
     return candlestick
 
-get_candlestick_data("AAA")
+get_candlestick_data("VIC")
 
 print("Tất cả dữ liệu đã được đẩy vào Elasticsearch.")
 
