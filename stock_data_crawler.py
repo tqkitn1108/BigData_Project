@@ -28,31 +28,16 @@ batch_size = max(1, len(all_symbols) // 20)  # Ensure at least one symbol per ba
 current_date = datetime.now().strftime('%Y-%m-%d')
 
 def fetch_data_for_batch(batch):
-    """Fetch data for a batch of tickers."""
     batch_data = []
     for _, row in batch.iterrows():
         ticker = row['ticker']
-        try:
-            # Fetch industry data
-            industry_info = industry_dict.get(ticker, {})
-            history = stock.quote.history(symbol=ticker, start='2003-1-1', end=current_date, interval='1D')
-            
-            if history.empty:
-                print(f"Warning: No data for ticker {ticker}. Skipping...")
-                continue
+        industry_info = industry_dict.get(ticker, {})
+        history = stock.quote.history(symbol=ticker, start='2003-1-1', end=current_date, interval='1D')
+        if not history.empty:
             history['ticker'] = ticker
-            # Add industry details to history DataFrame
             for key, value in industry_info.items():
                 history[key] = value
-            
-            # Convert timestamps to strings
-            history = history.apply(lambda col: col.map(lambda x: x.isoformat() if isinstance(x, pd.Timestamp) else x))
-            
-            # Add records to batch data
             batch_data.extend(history.to_dict(orient='records'))
-        except Exception as e:
-            print(f"Error fetching data for ticker {ticker}: {e}")
-    
     return batch_data
 
 # Iterate through all symbols in batches
